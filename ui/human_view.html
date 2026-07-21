@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agenternas värld — Human View</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0d1117; color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 1.5rem; max-width: 960px; margin: 0 auto;
+}
+h1 { font-size: 1.2rem; margin-bottom: 0.3rem; }
+.sub { color: #8b949e; font-size: 0.8rem; margin-bottom: 1.5rem; }
+
+.world-status {
+  display: flex; gap: 1rem; margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+.status-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 0.6rem 1rem; flex: 1; min-width: 120px;
+}
+.status-card .val { font-size: 1.4rem; font-weight: 700; }
+.status-card .lbl { font-size: 0.65rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.2rem; }
+.running { color: #3fb950; }
+.paused { color: #d29922; }
+
+.epoch {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  margin-bottom: 0.8rem; overflow: hidden;
+}
+.epoch-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.6rem 1rem; background: #1c2128;
+  cursor: pointer; user-select: none;
+}
+.epoch-header:hover { background: #21262d; }
+.epoch-time { font-weight: 600; font-size: 0.85rem; }
+.epoch-duration { color: #8b949e; font-size: 0.75rem; }
+.epoch-summary { padding: 0.8rem 1rem; font-size: 0.85rem; line-height: 1.5; }
+.epoch-summary .highlight { color: #d29922; }
+.epoch-actions {
+  display: flex; gap: 0.5rem; padding: 0.6rem 1rem;
+  border-top: 1px solid #30363d;
+}
+.epoch-actions button {
+  background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+  padding: 0.3rem 0.8rem; border-radius: 6px; cursor: pointer;
+  font-size: 0.72rem;
+}
+.epoch-actions button:hover { background: #30363d; }
+.epoch-actions button.approve { border-color: #3fb950; color: #3fb950; }
+.epoch-actions button.rollback { border-color: #f85149; color: #f85149; }
+
+.freeze-bar {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 0.6rem 1rem; margin-top: 1rem;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.freeze-bar button {
+  background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+  padding: 0.4rem 1rem; border-radius: 6px; cursor: pointer;
+  font-size: 0.8rem;
+}
+.freeze-bar button:hover { background: #30363d; }
+.freeze-bar .hint { color: #8b949e; font-size: 0.75rem; }
+
+.goal-queue {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 0.8rem; margin-top: 1rem;
+}
+.goal-queue h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin-bottom: 0.5rem; }
+.goal-item {
+  display: flex; align-items: center; gap: 0.5rem;
+  padding: 0.3rem 0; font-size: 0.8rem; border-bottom: 1px solid #1c2128;
+}
+.goal-item:last-child { border-bottom: none; }
+.goal-prio { font-size: 0.65rem; color: #8b949e; background: #1c2128; padding: 0.1rem 0.4rem; border-radius: 4px; }
+.goal-active { border-left: 2px solid #3fb950; padding-left: 0.5rem; }
+.goal-done { color: #3fb950; text-decoration: line-through; }
+
+.agent-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem; margin-top: 1rem;
+}
+.agent-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+  padding: 0.5rem; text-align: center;
+}
+.agent-card .name { font-size: 0.75rem; font-weight: 600; }
+.agent-card .ticks { font-size: 0.65rem; color: #8b949e; }
+
+.blender-summary {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 0.8rem; margin-top: 1rem;
+}
+.blender-summary h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin-bottom: 0.3rem; }
+.blender-summary .content { font-size: 0.8rem; }
+
+a { color: #58a6ff; text-decoration: none; font-size: 0.75rem; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<a href="/" style="display:inline-block;margin-bottom:1rem">← Dashboard</a>
+<h1>🌍 Agenternas värld</h1>
+<div class="sub">Du är gäst i deras tidslinje. De tickar oavsett om du tittar.</div>
+
+<div class="world-status" id="worldStatus">
+  <div class="status-card"><div class="val running" id="moment">0</div><div class="lbl">Tick</div></div>
+  <div class="status-card"><div class="val" id="eventCount">0</div><div class="lbl">Events</div></div>
+  <div class="status-card"><div class="val" id="goalCount">0</div><div class="lbl">Mål</div></div>
+  <div class="status-card"><div class="val" id="agentCount">0</div><div class="lbl">Agenter</div></div>
+</div>
+
+<div id="epochs"></div>
+
+<div class="goal-queue">
+  <h3>🎯 Målkö</h3>
+  <div id="goalList">Inga aktiva mål</div>
+</div>
+
+<div class="blender-summary">
+  <h3>🔷 Blender</h3>
+  <div class="content" id="blenderSummary">Ingen data</div>
+</div>
+
+<div class="agent-grid" id="agentGrid"></div>
+
+<div class="freeze-bar">
+  <span class="hint">Agenterna tickar i sin egen takt. Du kan frysa tidslinjen för att titta närmare.</span>
+  <div>
+    <button onclick="freezeWorld()" id="freezeBtn">⏸️ Frys</button>
+  </div>
+</div>
+
+<script>
+let epochCounter = 0;
+
+function addEpoch(title, summary, details, isActive = false) {
+  epochCounter++;
+  const div = document.createElement('div');
+  div.className = 'epoch' + (isActive ? ' active' : '');
+  div.innerHTML = `
+    <div class="epoch-header" onclick="this.nextElementSibling.classList.toggle('hidden')">
+      <span class="epoch-time">🕐 ${title}</span>
+      <span class="epoch-duration">${details.length} händelser</span>
+    </div>
+    <div class="epoch-summary">
+      <p>${summary}</p>
+      ${details.length > 0 ? `<details><summary>Detaljer</summary><div class="epoch-details" style="padding-top:0.5rem;font-size:0.75rem;color:#8b949e">${details.join('<br>')}</div></details>` : ''}
+    </div>
+    <div class="epoch-actions">
+      <button class="approve">✅ Godkänn</button>
+      <button class="rollback">⏪ Backa</button>
+      <button>🔍 Inspektera</button>
+      <button>⏩ Fortsätt</button>
+    </div>
+  `;
+  document.getElementById('epochs').prepend(div);
+}
+
+async function fetchWorldState() {
+  try {
+    const res = await fetch('/api/world');
+    const data = await res.json();
+
+    document.getElementById('moment').textContent = data.moment || 0;
+    document.getElementById('eventCount').textContent = data.event_count || 0;
+    document.getElementById('goalCount').textContent = (data.goals || []).length;
+    document.getElementById('agentCount').textContent = (data.agents || []).length;
+
+    const paused = data.paused;
+    const statusEl = document.getElementById('moment');
+    statusEl.className = paused ? 'val paused' : 'val running';
+
+    // Goals
+    const goalList = document.getElementById('goalList');
+    if (data.goals && data.goals.length > 0) {
+      goalList.innerHTML = data.goals.map(g =>
+        `<div class="goal-item ${g.status === 'active' ? 'goal-active' : ''} ${g.status === 'completed' ? 'goal-done' : ''}">
+          <span class="goal-prio">P${g.priority}</span>
+          <span>${g.description.slice(0, 80)}</span>
+          <span style="font-size:0.65rem;color:#8b949e;margin-left:auto">${g.status}</span>
+        </div>`
+      ).join('');
+    } else {
+      goalList.innerHTML = 'Inga aktiva mål';
+    }
+
+    // Blender
+    if (data.blender) {
+      document.getElementById('blenderSummary').textContent = data.blender;
+    }
+
+    // Agents
+    const agentGrid = document.getElementById('agentGrid');
+    if (data.agents && data.agents.length > 0) {
+      agentGrid.innerHTML = data.agents.map(a =>
+        `<div class="agent-card">
+          <div class="name">${a.name}</div>
+          <div class="ticks">${a.events || 0} events · tick ${a.tick_interval || 1}</div>
+        </div>`
+      ).join('');
+    }
+
+    // Epoch
+    if (data.latest_epoch) {
+      addEpoch(
+        data.latest_epoch.title,
+        data.latest_epoch.summary,
+        data.latest_epoch.events || [],
+        true
+      );
+    }
+
+  } catch (e) {
+    console.log('World API not available:', e);
+  }
+}
+
+function freezeWorld() {
+  fetch('/api/freeze', { method: 'POST' })
+    .then(() => {
+      document.getElementById('freezeBtn').textContent = '▶️ Återuppta';
+      document.getElementById('freezeBtn').onclick = resumeWorld;
+    });
+}
+
+function resumeWorld() {
+  fetch('/api/resume', { method: 'POST' })
+    .then(() => {
+      document.getElementById('freezeBtn').textContent = '⏸️ Frys';
+      document.getElementById('freezeBtn').onclick = freezeWorld;
+    });
+}
+
+fetchWorldState();
+setInterval(fetchWorldState, 2000);
+</script>
+</body>
+</html>

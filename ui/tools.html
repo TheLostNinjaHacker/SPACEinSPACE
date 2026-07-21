@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tool Tuning — Agent Ecosystem</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0d1117; color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 1.5rem; max-width: 960px; margin: 0 auto;
+}
+h1 { font-size: 1.2rem; margin-bottom: 0.3rem; }
+.sub { color: #8b949e; font-size: 0.8rem; margin-bottom: 1.5rem; }
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.8rem; margin-bottom: 1.5rem; }
+.stat-card {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 0.8rem; text-align: center;
+}
+.stat-card .val { font-size: 1.6rem; font-weight: 700; }
+.stat-card .lbl { font-size: 0.7rem; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 0.2rem; }
+.stat-card.good .val { color: #3fb950; }
+.stat-card.warn .val { color: #d29922; }
+.stat-card.bad .val { color: #f85149; }
+
+.suggestions {
+  background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+  padding: 0.8rem; margin-bottom: 1.5rem;
+}
+.suggestions h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin-bottom: 0.5rem; }
+.suggestion {
+  padding: 0.4rem 0; font-size: 0.8rem; border-bottom: 1px solid #30363d;
+  display: flex; align-items: start; gap: 0.4rem;
+}
+.suggestion:last-child { border-bottom: none; }
+.suggestion .icon { flex-shrink: 0; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+th { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 2px solid #30363d; color: #8b949e; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; }
+td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #1c2128; }
+tr:hover td { background: #1c212844; }
+.fail-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 0.3rem; }
+.fail-dot.ok { background: #3fb950; }
+.fail-dot.warn { background: #d29922; }
+.fail-dot.bad { background: #f85149; }
+.tool-name { font-weight: 600; }
+a { color: #58a6ff; text-decoration: none; font-size: 0.75rem; }
+a:hover { text-decoration: underline; }
+
+.loading { text-align: center; padding: 2rem; color: #8b949e; }
+.refresh-btn {
+  background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+  padding: 0.3rem 0.8rem; border-radius: 6px; cursor: pointer;
+  font-size: 0.75rem; float: right;
+}
+.refresh-btn:hover { background: #30363d; }
+</style>
+</head>
+<body>
+<a href="/" style="display:inline-block;margin-bottom:1rem">← Dashboard</a>
+<h1>🔧 Tool Tuning</h1>
+<div class="sub">Statistik och prompt-justering baserad på tool-anropsmönster</div>
+<button class="refresh-btn" onclick="loadStats()">↻ Refresh</button>
+
+<div class="stats-row" id="overview">
+  <div class="stat-card"><div class="val" id="totalCalls">—</div><div class="lbl">Total Calls</div></div>
+  <div class="stat-card"><div class="val" id="totalTools">—</div><div class="lbl">Unique Tools</div></div>
+  <div class="stat-card" id="failRateCard"><div class="val" id="failRate">—</div><div class="lbl">Fail Rate</div></div>
+  <div class="stat-card"><div class="val" id="suggestionCount">—</div><div class="lbl">Suggestions</div></div>
+</div>
+
+<div class="suggestions" id="suggestions">
+  <h3>💡 Prompt Suggestions</h3>
+  <div id="suggestionList"><div class="loading">Loading...</div></div>
+</div>
+
+<table id="toolTable">
+  <thead>
+    <tr>
+      <th>Tool</th>
+      <th>Calls</th>
+      <th>Fails</th>
+      <th>Fail Rate</th>
+      <th>Avg Latency</th>
+      <th>Top Error</th>
+      <th>Suggestion</th>
+    </tr>
+  </thead>
+  <tbody id="toolBody">
+    <tr><td colspan="7" class="loading">Loading...</td></tr>
+  </tbody>
+</table>
+
+<script>
+async function loadStats() {
+  const res = await fetch('/api/toolstats?hours=168');
+  const data = await res.json();
+
+  document.getElementById('totalCalls').textContent = data.total_calls || 0;
+  document.getElementById('totalTools').textContent = data.total_tools || 0;
+
+  const fr = (data.overall_fail_rate || 0) * 100;
+  const frEl = document.getElementById('failRate');
+  frEl.textContent = fr.toFixed(1) + '%';
+  frEl.style.color = fr > 20 ? '#f85149' : fr > 5 ? '#d29922' : '#3fb950';
+
+  const suggestions = data.suggestions || [];
+  document.getElementById('suggestionCount').textContent = suggestions.length;
+
+  const sl = document.getElementById('suggestionList');
+  if (suggestions.length === 0) {
+    sl.innerHTML = '<div style="color:#8b949e;font-size:0.75rem">No suggestions — all tools are healthy!</div>';
+  } else {
+    sl.innerHTML = suggestions.map(s =>
+      `<div class="suggestion"><span class="icon">⚠️</span><span>${s}</span></div>`
+    ).join('');
+  }
+
+  const tools = data.tools || {};
+  const tb = document.getElementById('toolBody');
+  const sorted = Object.values(tools).sort((a, b) => b.call_count - a.call_count);
+  if (sorted.length === 0) {
+    tb.innerHTML = '<tr><td colspan="7" class="loading">No tool data yet — run some tasks first!</td></tr>';
+    return;
+  }
+  tb.innerHTML = sorted.map(t => {
+    const frPct = (t.fail_rate || 0) * 100;
+    const dotCls = frPct > 20 ? 'bad' : frPct > 5 ? 'warn' : 'ok';
+    const lat = t.avg_latency_ms ? (t.avg_latency_ms > 1000 ? (t.avg_latency_ms / 1000).toFixed(1) + 's' : t.avg_latency_ms.toFixed(0) + 'ms') : '—';
+    const topErr = t.top_errors?.[0] ? t.top_errors[0].slice(0, 60) : '—';
+    const sugg = t.suggestion || '—';
+    return `<tr>
+      <td class="tool-name">${t.tool_name}</td>
+      <td>${t.call_count}</td>
+      <td>${t.fail_count}</td>
+      <td><span class="fail-dot ${dotCls}"></span>${frPct.toFixed(1)}%</td>
+      <td>${lat}</td>
+      <td style="color:#8b949e;max-width:200px;overflow:hidden;text-overflow:ellipsis">${topErr}</td>
+      <td style="color:#d29922;max-width:250px;font-size:0.72rem">${sugg}</td>
+    </tr>`;
+  }).join('');
+}
+
+loadStats();
+</script>
+</body>
+</html>

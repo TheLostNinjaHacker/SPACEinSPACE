@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vector Space — Agent Memory</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0d1117; color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  height: 100vh; overflow: hidden;
+}
+canvas { display: block; }
+
+.controls {
+  position: fixed; top: 1rem; left: 1rem;
+  background: rgba(22,27,34,0.92); border: 1px solid #30363d;
+  border-radius: 8px; padding: 0.8rem; font-size: 0.75rem;
+  backdrop-filter: blur(8px); min-width: 200px;
+}
+.controls h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin-bottom: 0.4rem; }
+.controls label { display: flex; align-items: center; gap: 0.4rem; padding: 0.2rem 0; cursor: pointer; font-size: 0.75rem; }
+.controls input[type="checkbox"] { accent-color: #58a6ff; }
+
+.info {
+  position: fixed; bottom: 1rem; left: 1rem; right: 1rem;
+  pointer-events: none; display: flex; justify-content: space-between;
+  font-size: 0.65rem; color: #8b949e;
+}
+.info span { background: rgba(22,27,34,0.85); padding: 0.3rem 0.6rem; border-radius: 4px; }
+
+.tooltip {
+  position: fixed; pointer-events: none;
+  background: rgba(22,27,34,0.95); border: 1px solid #30363d;
+  border-radius: 6px; padding: 0.6rem; font-size: 0.7rem;
+  max-width: 300px; display: none; z-index: 100;
+  line-height: 1.5;
+}
+.tooltip .tt-type { font-weight: 600; }
+.tooltip .tt-content { margin-top: 0.2rem; color: #8b949e; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="tooltip" id="tooltip"></div>
+<div class="controls">
+  <h3>🎯 Memory Types</h3>
+  <label><input type="checkbox" data-type="episodic" checked><span style="color:#58a6ff">⬤</span> Episodic</label>
+  <label><input type="checkbox" data-type="semantic" checked><span style="color:#3fb950">⬤</span> Semantic</label>
+  <label><input type="checkbox" data-type="procedural" checked><span style="color:#d29922">⬤</span> Procedural</label>
+  <label><input type="checkbox" data-type="scratchpad" checked><span style="color:#bc8cff">⬤</span> Scratchpad</label>
+  <div style="margin-top:0.5rem;font-size:0.65rem;color:#8b949e" id="stats">Laddar...</div>
+</div>
+<div class="info">
+  <span>🖱️ Hovra för att se minne</span>
+  <span id="pointCount">0 punkter · <a href="/" style="color:#58a6ff;text-decoration:none">Dashboard</a> · <a href="/tools" style="color:#58a6ff;text-decoration:none">Tools</a></span>
+</div>
+
+<script>
+const SUPABASE_URL = '__SUPABASE_URL__';
+const SUPABASE_ANON_KEY = '__SUPABASE_ANON_KEY__';
+
+const TYPE_COLORS = {
+  episodic: '#58a6ff',
+  semantic: '#3fb950',
+  procedural: '#d29922',
+  scratchpad: '#bc8cff',
+};
+const TYPE_ORDER = ['episodic', 'semantic', 'procedural', 'scratchpad'];
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let points = [];
+let visibleTypes = new Set(TYPE_ORDER);
+let hoveredPoint = null;
+let camera = { x: 0, y: 0, zoom: 1 };
+let isDragging = false;
+let dragStart = null;
+
+// ─── Fetch ───
+async function loadVectors() {
+  try {
+    const res = await fetch('/api/vectors');
+    const data = await res.json();
+    points = data.points || [];
+    document.getElementById('pointCount').textContent = `${points.length} punkter`;
+    const stats = data.by_type || {};
+    document.getElementById('stats').textContent =
+      Object.entries(stats).map(([k, v]) => `${k}: ${v}`).join(' · ');
+    draw();
+  } catch (e) {
+    document.getElementById('stats').textContent = 'Failed to load: ' + e.message;
+  }
+}
+
+// ─── Filtering ───
+document.querySelectorAll('.controls input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener('change', () => {
+    const type = cb.dataset.type;
+    if (cb.checked) visibleTypes.add(type);
+    else visibleTypes.delete(type);
+    draw();
+  });
+});
+
+// ─── Drawing ───
+function worldToScreen(wx, wy) {
+  return {
+    x: (wx - camera.x) * camera.zoom + W / 2,
+    y: (wy - camera.y) * camera.zoom + H / 2,
+  };
+}
+
+function screenToWorld(sx, sy) {
+  return {
+    x: (sx - W / 2) / camera.zoom + camera.x,
+    y: (sy - H / 2) / camera.zoom + camera.y,
+  };
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Background grid
+  ctx.strokeStyle = '#1c2128';
+  ctx.lineWidth = 1;
+  const gridSize = 50 * camera.zoom;
+  const ox = (camera.x * camera.zoom) % gridSize;
+  const oy = (camera.y * camera.zoom) % gridSize;
+  for (let x = -gridSize + ox; x < W + gridSize; x += gridSize) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+  }
+  for (let y = -gridSize + oy; y < H + gridSize; y += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+  }
+
+  // Points
+  const radius = Math.max(3, 6 * camera.zoom);
+  for (const p of points) {
+    if (!visibleTypes.has(p.type)) continue;
+    const s = worldToScreen(p.x, p.y);
+    if (s.x < -20 || s.x > W + 20 || s.y < -20 || s.y > H + 20) continue;
+
+    const color = TYPE_COLORS[p.type] || '#8b949e';
+    const isHover = hoveredPoint === p;
+
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, isHover ? radius + 4 : radius, 0, Math.PI * 2);
+    ctx.fillStyle = isHover ? color : color + '88';
+    ctx.fill();
+
+    if (isHover) {
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+}
+
+// ─── Mouse ───
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  if (isDragging && dragStart) {
+    const dx = (mx - dragStart.x) / camera.zoom;
+    const dy = (my - dragStart.y) / camera.zoom;
+    camera.x -= dx;
+    camera.y -= dy;
+    dragStart = { x: mx, y: my };
+    draw();
+    return;
+  }
+
+  // Hit test
+  const world = screenToWorld(mx, my);
+  let closest = null;
+  let closestDist = Infinity;
+
+  for (const p of points) {
+    if (!visibleTypes.has(p.type)) continue;
+    const s = worldToScreen(p.x, p.y);
+    const dx = mx - s.x, dy = my - s.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 20 && dist < closestDist) {
+      closest = p;
+      closestDist = dist;
+    }
+  }
+
+  hoveredPoint = closest;
+  if (closest) {
+    tooltip.style.display = 'block';
+    tooltip.style.left = (mx + 15) + 'px';
+    tooltip.style.top = (my + 15) + 'px';
+    const color = TYPE_COLORS[closest.type] || '#8b949e';
+    tooltip.innerHTML = `
+      <div class="tt-type" style="color:${color}">${closest.type}</div>
+      <div class="tt-content">${closest.content || '(no content)'}</div>
+      <div style="margin-top:0.3rem;color:#8b949e;font-size:0.65rem">
+        ${closest.source ? 'Source: ' + closest.source : ''}
+        ${closest.confidence ? '· confidence: ' + closest.confidence : ''}
+      </div>`;
+  } else {
+    tooltip.style.display = 'none';
+  }
+  draw();
+});
+
+canvas.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  dragStart = { x: e.clientX, y: e.clientY };
+});
+
+canvas.addEventListener('mouseup', () => {
+  isDragging = false;
+  dragStart = null;
+});
+
+canvas.addEventListener('mouseleave', () => {
+  isDragging = false;
+  dragStart = null;
+  hoveredPoint = null;
+  tooltip.style.display = 'none';
+  draw();
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const world = screenToWorld(mx, my);
+  camera.zoom *= zoomFactor;
+  camera.zoom = Math.max(0.1, Math.min(20, camera.zoom));
+  camera.x = world.x;
+  camera.y = world.y;
+  draw();
+}, { passive: false });
+
+// ─── Init ───
+loadVectors();
+</script>
+</body>
+</html>

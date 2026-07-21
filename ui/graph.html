@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Graph — Realtime</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0d1117; color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  overflow: hidden; height: 100vh;
+}
+canvas { display: block; width: 100vw; height: 100vh; }
+
+.legend {
+  position: fixed; top: 1rem; left: 1rem;
+  background: rgba(22,27,34,0.9); border: 1px solid #30363d;
+  border-radius: 8px; padding: 0.8rem; font-size: 0.75rem;
+  backdrop-filter: blur(8px);
+}
+.legend h3 { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin-bottom: 0.4rem; }
+.legend-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.15rem 0; }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+.stats {
+  position: fixed; bottom: 1rem; right: 1rem;
+  background: rgba(22,27,34,0.9); border: 1px solid #30363d;
+  border-radius: 8px; padding: 0.6rem 0.9rem; font-size: 0.7rem;
+  backdrop-filter: blur(8px); text-align: right;
+  color: #8b949e;
+}
+.stats strong { color: #e6edf3; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<div class="legend" id="legend">
+  <h3>Agenter</h3>
+</div>
+<div class="stats" id="stats">
+  <div>Noder: <strong id="nodeCount">0</strong></div>
+  <div>Kanter: <strong id="edgeCount">0</strong></div>
+  <div style="margin-top:0.3rem;font-size:0.65rem" id="fps"></div>
+  <div style="margin-top:0.3rem"><a href="/" style="color:#58a6ff;font-size:0.65rem">← Dashboard</a></div>
+</div>
+
+<script>
+const SUPABASE_URL = '__SUPABASE_URL__';
+const SUPABASE_ANON_KEY = '__SUPABASE_ANON_KEY__';
+
+const AGENT_INFO = {
+  planner: { label: 'Planner', icon: '🧠', color: '#d29922', role: 'planner' },
+  'blender-agent': { label: 'Blender', icon: '🔷', color: '#58a6ff', role: 'blender' },
+  'memory-agent': { label: 'Memory', icon: '📚', color: '#bc8cff', role: 'memory' },
+  'tool-agent': { label: 'Tool', icon: '🔧', color: '#3fb950', role: 'tool' },
+  review: { label: 'Review', icon: '🔍', color: '#f85149', role: 'review' },
+  fallback: { label: 'Fallback', icon: '🛡️', color: '#8b949e', role: 'fallback' },
+  human: { label: 'Human', icon: '👤', color: '#58a6ff', role: 'human' },
+  tool_executor: { label: 'Executor', icon: '⚙️', color: '#f0883e', role: 'tool' },
+};
+
+// ─── Force Graph ───
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let W, H;
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+class Node {
+  constructor(id) {
+    this.id = id;
+    const info = AGENT_INFO[id] || { label: id, icon: '❓', color: '#8b949e' };
+    this.label = info.label;
+    this.icon = info.icon;
+    this.color = info.color;
+    this.x = Math.random() * W;
+    this.y = Math.random() * H;
+    this.vx = 0; this.vy = 0;
+    this.radius = 28;
+    this.pulse = 0;
+  }
+}
+
+class Edge {
+  constructor(from, to, timestamp) {
+    this.from = from;
+    this.to = to;
+    this.timestamp = timestamp;
+    this.alpha = 1;
+  }
+}
+
+const nodes = new Map();
+const edges = [];
+let animationId;
+let lastFrame = 0;
+let frames = 0;
+let fpsTime = 0;
+
+function ensureNode(id) {
+  if (!nodes.has(id)) {
+    nodes.set(id, new Node(id));
+  }
+  return nodes.get(id);
+}
+
+function addEdge(fromId, toId, timestamp) {
+  if (!toId) return;
+  ensureNode(fromId);
+  ensureNode(toId);
+  edges.push(new Edge(fromId, toId, timestamp));
+  // Remove stale edges after 30s
+  const cutoff = Date.now() - 30000;
+  while (edges.length > 0 && edges[0].timestamp < cutoff) {
+    edges.shift();
+  }
+}
+
+async function api(path) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+    });
+    return await res.json();
+  } catch { return []; }
+}
+
+async function loadRecent() {
+  const msgs = await api('agent_conversations?select=from_agent,to_agent,created_at&order=created_at.desc&limit=100');
+  const now = Date.now();
+  for (const m of msgs) {
+    const t = new Date(m.created_at).getTime();
+    if (now - t < 60000) { // last 60s
+      addEdge(m.from_agent, m.to_agent, t);
+    }
+  }
+}
+
+function connectRealtime() {
+  const wsUrl = SUPABASE_URL.replace('https://', 'wss://');
+  const ws = new WebSocket(`${wsUrl}/realtime/v1/websocket?apikey=${SUPABASE_ANON_KEY}&vsn=1.0.0`);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ topic: 'realtime:agent_conversations', event: 'phx_join', payload: {}, ref: '1' }));
+  };
+  ws.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.event === 'INSERT' && data.payload?.record) {
+        const r = data.payload.record;
+        addEdge(r.from_agent, r.to_agent, Date.now());
+        stats();
+      }
+    } catch {}
+  };
+  ws.onclose = () => setTimeout(connectRealtime, 3000);
+}
+
+function stats() {
+  document.getElementById('nodeCount').textContent = nodes.size;
+  document.getElementById('edgeCount').textContent = edges.length;
+}
+
+function tick() {
+  const nodesArr = Array.from(nodes.values());
+
+  // Repulsion (Coulomb)
+  for (let i = 0; i < nodesArr.length; i++) {
+    for (let j = i + 1; j < nodesArr.length; j++) {
+      const a = nodesArr[i], b = nodesArr[j];
+      let dx = b.x - a.x, dy = b.y - a.y;
+      let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const force = 1200 / (dist * dist);
+      const fx = (dx / dist) * force;
+      const fy = (dy / dist) * force;
+      a.vx -= fx; a.vy -= fy;
+      b.vx += fx; b.vy += fy;
+    }
+  }
+
+  // Attraction along edges (spring)
+  for (const edge of edges) {
+    const a = nodes.get(edge.from);
+    const b = nodes.get(edge.to);
+    if (!a || !b) continue;
+    let dx = b.x - a.x, dy = b.y - a.y;
+    let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    const force = (dist - 100) * 0.005;
+    const fx = (dx / dist) * force;
+    const fy = (dy / dist) * force;
+    a.vx += fx; a.vy += fy;
+    b.vx -= fx; b.vy -= fy;
+  }
+
+  // Center gravity
+  for (const node of nodesArr) {
+    node.vx += (W / 2 - node.x) * 0.001;
+    node.vy += (H / 2 - node.y) * 0.001;
+    node.vx *= 0.85; node.vy *= 0.85;
+    node.x += node.vx;
+    node.y += node.vy;
+    node.x = Math.max(50, Math.min(W - 50, node.x));
+    node.y = Math.max(50, Math.min(H - 50, node.y));
+  }
+
+  // Pulse animation for active nodes
+  for (const node of nodesArr) {
+    node.pulse = Math.sin(Date.now() / 800 + node.x * 0.01) * 3;
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+
+  // Edges
+  for (const edge of edges) {
+    const a = nodes.get(edge.from);
+    const b = nodes.get(edge.to);
+    if (!a || !b) continue;
+    const age = (Date.now() - edge.timestamp) / 30000;
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.strokeStyle = `rgba(88, 166, 255, ${0.6 * (1 - age)})`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // Arrow
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = dx / len, ny = dy / len;
+    const arrowSize = 6;
+    ctx.beginPath();
+    ctx.moveTo(b.x - nx * a.radius, b.y - ny * a.radius);
+    ctx.lineTo(b.x - nx * (a.radius + arrowSize) - ny * arrowSize * 0.5,
+               b.y - ny * (a.radius + arrowSize) + nx * arrowSize * 0.5);
+    ctx.lineTo(b.x - nx * (a.radius + arrowSize) + ny * arrowSize * 0.5,
+               b.y - ny * (a.radius + arrowSize) - nx * arrowSize * 0.5);
+    ctx.closePath();
+    ctx.fillStyle = `rgba(88, 166, 255, ${0.4 * (1 - age)})`;
+    ctx.fill();
+  }
+
+  // Nodes
+  for (const node of nodes.values()) {
+    const r = node.radius + node.pulse;
+    const grad = ctx.createRadialGradient(node.x - 4, node.y - 4, 0, node.x, node.y, r + 10);
+    grad.addColorStop(0, node.color + '66');
+    grad.addColorStop(0.6, node.color + '33');
+    grad.addColorStop(1, node.color + '00');
+
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r + 10, 0, Math.PI * 2);
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = '#161b22';
+    ctx.fill();
+    ctx.strokeStyle = node.color;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.font = '20px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(node.icon, node.x, node.y + 1);
+
+    ctx.font = '11px -apple-system, sans-serif';
+    ctx.fillStyle = '#e6edf3';
+    ctx.fillText(node.label, node.x, node.y + r + 16);
+  }
+}
+
+function loop(time) {
+  tick();
+  draw();
+  stats();
+
+  frames++;
+  if (time - fpsTime > 1000) {
+    document.getElementById('fps').textContent = `${frames} FPS`;
+    frames = 0;
+    fpsTime = time;
+  }
+
+  animationId = requestAnimationFrame(loop);
+}
+
+// ─── Legend ───
+function renderLegend() {
+  const el = document.getElementById('legend');
+  for (const [id, info] of Object.entries(AGENT_INFO)) {
+    el.innerHTML += `<div class="legend-item"><span class="legend-dot" style="background:${info.color}"></span>${info.icon} ${info.label}</div>`;
+  }
+}
+
+// ─── Init ───
+async function init() {
+  renderLegend();
+  await loadRecent();
+  connectRealtime();
+  loop(0);
+}
+
+init();
+</script>
+</body>
+</html>
