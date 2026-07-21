@@ -129,7 +129,11 @@ async def chat_loop():
                     console.print("[red]/guest kräver: /guest <handle> <text>[/]")
                 else:
                     handle, text = parts[1].strip(), parts[2].strip()
-                    msg_id = await conductor.publish_as_guest(handle, text)
+                    try:
+                        msg_id = await conductor.publish_as_guest(handle, text)
+                    except ValueError as e:
+                        console.print(f"[red]{e}[/]")
+                        continue
                     console.print(f"[bold blue]👤 Guest {handle}:[/] {text[:80]}{'...' if len(text) > 80 else ''} (id={msg_id.message_id if msg_id else '??'})")
 
             elif cmd.lower().startswith("/unguest"):
@@ -138,7 +142,11 @@ async def chat_loop():
                     console.print("[red]/unguest kräver: /unguest <handle>[/]")
                 else:
                     handle = parts[1].strip()
-                    removed = await conductor.remove_guest(handle)
+                    try:
+                        removed = await conductor.remove_guest(handle)
+                    except ValueError as e:
+                        console.print(f"[red]{e}[/]")
+                        continue
                     if removed:
                         console.print(f"[dim]Guest {handle} removed from bus.[/]")
                     else:

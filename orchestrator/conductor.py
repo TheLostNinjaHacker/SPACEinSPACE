@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from typing import Dict, Optional, Tuple
 
 from dotenv import load_dotenv
@@ -33,6 +34,18 @@ from agents.memory_agent import MemoryAgent
 from agents.tool_agent import ToolAgent
 from agents.review_agent import ReviewAgent
 from agents.fallback_agent import FallbackAgent
+
+
+# Charter Article 5.4 — guest-handle input contract.
+# Reject any non-trivial input that could be used to mint a peer id
+# with attacker-influenced routing. The reservation isn't perfect
+# (a malicious peer can still spoof by emitting messages with
+# crafted `from_agent` fields) but the regex blocks the simple
+# abuse class of `/guest evil; rm -rf /`. The handle is also
+# passed into `agent_id = f"guest-{handle}"` and a peer-id-shaped
+# string with control characters would otherwise leak onto the
+# bus and into the witness log (Charter 3.2).
+GUEST_HANDLE_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 
 
 class Conductor:
@@ -108,9 +121,15 @@ class Conductor:
         """
         agent = self._agents_by_id.get(agent_id)
         if agent is None:
+            # Charter 3.2 — witness log is public-by-default within
+            # the conductor; do NOT enumerate the registered agent
+            # ids in the rejection string. That would leak the
+            # registry to any caller who attempted a forbidden tool
+            # call. A count is enough for ops to know whether the
+            # conductor started up empty.
             raise KeyError(
-                f"agent_id {agent_id!r} not registered in conductor "
-                f"(known: {sorted(self._agents_by_id.keys())})"
+                f"agent_id {agent_id!r} not in conductor registry "
+                f"(registry size: {len(self._agents_by_id)})"
             )
         return tuple(agent.capabilities)
 
@@ -119,8 +138,17 @@ class Conductor:
         """Visitor seat on the A2A bus (Charter Article 5.4).
 
         Returns an existing HumanGuestAgent if one already exists for
-        this handle, else creates one and registers it.
+        this handle, else creates one and registers it. The handle is
+        validated against `GUEST_HANDLE_RE` to ensure bus-minted peer
+        ids are constrained to a safe charset. ValueError on malformed
+        input is the caller's job to surface (e.g. CLI red error).
         """
+        if not isinstance(handle, str) or not GUEST_HANDLE_RE.match(handle):
+            raise ValueError(
+                f"Invalid guest handle {handle!r}. "
+                f"Must match ^[a-z0-9_-]{{1,32}}$ (lowercase letters, "
+                f"digits, underscore, hyphen; 1-32 chars)."
+            )
         agent_id = f"guest-{handle}"
         existing = self._agents_by_id.get(agent_id)
         if existing is not None:
@@ -165,6 +193,11 @@ class Conductor:
         return await agent.handle_message(msg)
 
     async def remove_guest(self, handle: str) -> bool:
+        if not isinstance(handle, str) or not GUEST_HANDLE_RE.match(handle):
+            raise ValueError(
+                f"Invalid guest handle {handle!r}. "
+                f"Must match ^[a-z0-9_-]{{1,32}}$"
+            )
         agent_id = f"guest-{handle}"
         instance = self._agents_by_id.pop(agent_id, None)
         self.agents.pop(f"guest:{handle}", None)

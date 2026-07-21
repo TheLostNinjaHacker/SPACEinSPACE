@@ -282,3 +282,32 @@ async def test_article_4_plugin_tools_require_their_plugin_capability():
             assert m in result["error"], (
                 f"{name}: missing capability {m!r} should appear in error"
             )
+
+
+# ─── Defensive scaffold ─────────────────────────────────────────
+
+def test_every_blender_tool_requires_blender_capability():
+    """Every blender.* ToolDef must include 'blender' in
+    `requires_capability`. Strict enforcement catches future
+    regressions where a new entry ships without any capability
+    assertion at all.
+
+    This is the strict version of the prior soft caps test — the
+    Charter 4 substrate asserts that every blender.* tool has at
+    least the 'blender' ancestor cap so an agent calling it must
+    declare that string in its capability tuple. Companion to the
+    `test_article_4_plugin_tools_require_their_plugin_capability`
+    test which covers plugin-specific extensions.
+    """
+    from tools.registry import TOOL_DEFINITIONS
+
+    offenders = [
+        name for name, defn in TOOL_DEFINITIONS.items()
+        if name.startswith("blender.") and "blender" not in defn.requires_capability
+    ]
+
+    assert not offenders, (
+        f"blender.* tools missing 'blender' in requires_capability: "
+        f"{offenders}. Every blender.* ToolDef MUST declare at least "
+        f"the 'blender' cap."
+    )

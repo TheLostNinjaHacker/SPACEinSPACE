@@ -33,6 +33,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             {"input": {}, "output": {"objects": ["Cube", "Camera", "Light"], "mode": "OBJECT"}}
         ],
         failure_patterns={"connection": "Blender MCP-server är inte igång"},
+        requires_capability=["blender"],
     ),
     "blender.create_object": ToolDef(
         name="blender.create_object",
@@ -57,6 +58,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             "invalid_type": "Stödd objekttyp, använd en av: cube, sphere, cylinder, plane, monkey",
         },
         timeout_ms=5000,
+        requires_capability=["blender"],
     ),
     "blender.modify_object": ToolDef(
         name="blender.modify_object",
@@ -79,6 +81,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             "wrong_mode": "Extrude kräver EDIT mode",
         },
         timeout_ms=8000,
+        requires_capability=["blender"],
     ),
     "blender.set_material": ToolDef(
         name="blender.set_material",
@@ -93,6 +96,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             },
             "required": ["object", "color"],
         },
+        requires_capability=["blender"],
     ),
     "blender.render": ToolDef(
         name="blender.render",
@@ -107,6 +111,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             },
         },
         timeout_ms=60000,
+        requires_capability=["blender"],
     ),
     "blender.execute_script": ToolDef(
         name="blender.execute_script",
@@ -120,6 +125,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             "required": ["script"],
         },
         timeout_ms=15000,
+        requires_capability=["blender"],
     ),
     "blender.undo": ToolDef(
         name="blender.undo",
@@ -129,6 +135,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             "type": "object",
             "properties": {},
         },
+        requires_capability=["blender"],
     ),
     "blender.get_viewport": ToolDef(
         name="blender.get_viewport",
@@ -139,6 +146,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             "properties": {},
         },
         timeout_ms=5000,
+        requires_capability=["blender"],
     ),
     "web.search": ToolDef(
         name="web.search",
@@ -284,7 +292,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             },
             "required": ["object"],
         },
-        requires_capability=["blender", "boxcutter"],
+        requires_capability=["blender"],
     ),
     "blender.uv.pack": ToolDef(
         name="blender.uv.pack",
@@ -297,7 +305,7 @@ TOOL_DEFINITIONS: dict[str, ToolDef] = {
             },
             "required": ["object"],
         },
-        requires_capability=["blender", "textools"],
+        requires_capability=["blender"],
     ),
     "blender.geometry_nodes.apply": ToolDef(
         name="blender.geometry_nodes.apply",

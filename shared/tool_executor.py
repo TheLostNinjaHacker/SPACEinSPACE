@@ -66,7 +66,7 @@ class ToolExecutor:
             except Exception:
                 _probe = None
             if _probe is not None and (
-                not isinstance(_probe, (tuple, list))
+                not isinstance(_probe, tuple)
                 or not all(isinstance(c, str) for c in _probe)
             ):
                 raise ValueError(
@@ -139,61 +139,6 @@ class ToolExecutor:
             if not re.fullmatch(r"[\d\s\.\+\-\*\/\(\)eE]+", expression or ""):
                 raise ValueError(f"Unsafe expression: {expression!r}")
             return {"expression": expression, "result": eval(expression, {"__builtins__": {}}, {})}
-
-    # ─── Capability Gate (Charter Article 4) ────────────────
-    async def _check_capability_gate(
-        self,
-        name: str,
-        agent_id: str,
-        args: Dict[str, Any],
-        thread_id: str,
-        span: AgentSpan,
-        tool_id: str,
-    ) -> Optional[Dict[str, Any]]:
-        tool_def = self._tool_defs.get(name)
-        if not tool_def:
-            return None
-        required = getattr(tool_def, "requires_capability", [])
-        if not required:
-            return None
-
-        if self._agent_capabilities is None:
-            err = (
-                f"Charter Article 4 capability rejection: no agent_capabilities "
-                f"resolver wired to verify capabilities for agent '{agent_id}' requiring {required}"
-            )
-        else:
-            try:
-                declared = set(self._agent_capabilities(agent_id))
-                missing = set(required) - declared
-                if missing:
-                    err = (
-                        f"Charter Article 4 capability rejection: agent '{agent_id}' "
-                        f"missing required capability(ies): {', '.join(sorted(missing))}"
-                    )
-                else:
-                    return None
-            except Exception as e:
-                err = (
-                    f"Charter Article 4 capability rejection: resolver raised "
-                    f"{type(e).__name__}: {e}"
-                )
-
-        span.finish(success=False, error=err)
-        telemetry.record_span(span)
-        if self.db is not None:
-            try:
-                await self.db.log_tool_call(
-                    thread_id=thread_id,
-                    agent_id=agent_id,
-                    tool_name=name,
-                    input_params=args,
-                    success=False,
-                    error_message=err,
-                )
-            except Exception:
-                pass
-        return {"id": tool_id, "name": name, "success": False, "error": err}
 
     # ─── Validation ─────────────────────────────────────────
     # ─── Capability gate (Charter Article 4) ──────────────────────────────────
