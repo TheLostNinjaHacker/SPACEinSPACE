@@ -1,0 +1,10 @@
+# Project tooling configuration.
+#
+# The [tool.pytest.ini_options] block below lets a fresh clone run the suite
+# with a bare `pytest`. Without `pythonpath = ["."]`, the top-level packages
+# (shared, tools, agents, orchestrator, mcp_servers) are not importable and
+# collection fails with `ModuleNotFoundError` unless you happen to invoke
+# `python -m pytest`. Pinning it here removes that first-contributor trap.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
