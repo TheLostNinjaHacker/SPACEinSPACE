@@ -3,7 +3,7 @@ from typing import Optional, List
 import httpx
 
 OLLAMA_BASE = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("LLM_MODEL", "qwen3:8b")
+LLM_MODEL = os.getenv("LLM_MODEL", "qwen3:4b")
 EMBED_MODEL = os.getenv("EMBED_MODEL", "qwen3-embedding:8b")
 
 

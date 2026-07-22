@@ -13,7 +13,7 @@ cd /Users/joachimsundgren/agent-ecosystem
 cp .env.example .env        # Fyll i SUPABASE_URL, SUPABASE_KEY, OLLAMA_BASE_URL
 pip install -r requirements.txt
 ollama pull qwen3-embedding:8b
-ollama pull qwen3:8b
+ollama pull qwen3:4b
 python sql/apply_schema.py  # Skapa tabeller i Supabase
 python main.py              # Starta CLI
 ```

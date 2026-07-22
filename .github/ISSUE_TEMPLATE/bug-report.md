@@ -29,7 +29,7 @@ What did happen?
 
 - OS:
 - Python:
-- Ollama version + models (`qwen3:8b`, `qwen3-embedding:8b`):
+- Ollama version + models (`qwen3:4b`, `qwen3-embedding:8b`):
 - Conductor mode (CLI / programmatic):
 
 ## Logs

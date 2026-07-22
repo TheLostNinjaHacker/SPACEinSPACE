@@ -109,7 +109,7 @@ pip install -r requirements.txt
 
 # Local LLM (one-time)
 ollama pull qwen3-embedding:8b
-ollama pull qwen3:8b
+ollama pull qwen3:4b
 
 # Postgres schema (one-time)
 python sql/apply_schema.py

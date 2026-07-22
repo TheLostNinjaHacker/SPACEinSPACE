@@ -1,0 +1,9 @@
+{
+  "blender_host": "localhost",
+  "blender_port": 9876,
+  "max_jobs_per_run": 3,
+  "min_pending_for_refill": 2,
+  "gallery_path": "blender-jobs/gallery.md",
+  "screenshots_dir": "blender-jobs/screenshots",
+  "seed_file": "blender-jobs/seed-ideas.md"
+}
